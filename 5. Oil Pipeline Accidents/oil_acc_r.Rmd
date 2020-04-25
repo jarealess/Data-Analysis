@@ -1,0 +1,65 @@
+---
+title: "Oil Accidents Analysis"
+author: "Janick Reales & Luisa Rios"
+date: "11/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# OIL PIPELINE ACCIDENTS
+
+The data used in this analysis was taken from [kaggle](https://www.kaggle.com/usdot/pipeline-accidents). The goal of the analysis is to undertand the main aspects relaten with the collected data. 
+
+
+Firt, we have to import the libraries needed.
+```{r echo=FALSE}
+library(tidyverse)
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(leaflet)
+library(htmltools)
+library(RColorBrewer)
+library(kableExtra)
+```
+
+#### Importing database
+```{r echo=FALSE}
+oil_accidents <- read.csv("database.csv", header=TRUE, sep=',', encoding="UTF-8")
+```
+
+
+The imported database contains `r dim(oil_accidents)[1]` rows and `r dim(oil_accidents)[2]` columns. The following table shows the fisrt rows of the dataset. 
+
+```{r}
+dt <- head(oil_accidents)
+ kable(dt) %>%
+      kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F) %>%
+      scroll_box(width = "910px", height = "500px")
+```
+
+Where the number of Na/Null values and the type of attribute in each column are:
+```{r}
+## counting the num of NA values in each column
+na_values <- colSums(is.na(oil_accidents))
+
+## checking the type of attribute in each column
+col_type <- sapply(oil_accidents, class)
+
+
+###
+type_values <- data.frame(na_values, col_type)
+
+ kable(type_values) %>%
+      kable_styling(bootstrap_options = c("hover", "condensed"), full_width = T) %>%
+      scroll_box(width = "400px", height = "500px")
+```
+
+Ana the 
+```{r}
+
+```
+
