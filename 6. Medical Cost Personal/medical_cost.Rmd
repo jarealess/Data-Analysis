@@ -1,0 +1,208 @@
+---
+title: "Medical Cost Analysis"
+author: "Janick Reales & Luisa Rios"
+date: "11/4/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Medical Cost Analysis
+ 
+The data used in this analysis was taken from [kaggle](https://www.kaggle.com/usdot/pipeline-accidents) and contains a series of data to predict the Indivial Medical Cost billed by health insurance.
+
+The columns within the dataset are the following:
+
+* age: age of primary beneficiary
+* sex: insurance contractor gender, female, male
+* bmi: Body mass index, providing an understanding of body, weights that are relatively high or low relative to height, objective index of body weight (kg / m ^ 2) using the ratio of height to weight, ideally 18.5 to 24.9
+* children: Number of children covered by health insurance / Number of dependents
+* smoker: Smoking
+* region: the beneficiary's residential area in the US, northeast, southeast, southwest, northwest.
+* charges: Individual medical costs billed by health insurance
+
+In this notebook we aim to perform an exploratory analysis in order to describe the main caracteristics of our data and then to train and fit a Linear Regression model to predict medical costs with the highest accuracy as possible.
+
+Firt, we have to import the libraries needed and the database.
+
+
+```{r echo=FALSE, include=FALSE}
+library(tidyverse)
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(leaflet)
+library(htmltools)
+library(RColorBrewer)
+library(kableExtra)
+library(gridExtra)
+```
+
+
+```{r echo=FALSE}
+medical_cost <- read.csv("insurance.csv", header=TRUE, sep=',', encoding="UTF-8")
+```
+
+
+### Data Exploration and Visualization
+
+We will perform and exploratory analysis of the dataset in order to get insights from the column though tables and plots.
+
+```{r echo=FALSE}
+dt <- head(medical_cost)
+ kable(dt) %>%
+      kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F) %>%
+      scroll_box(width = "500px", height = "250px")
+```
+
+
+
+
+```{r echo=FALSE}
+## counting the num of NA values in each column
+na_values <- colSums(is.na(medical_cost))
+
+## checking the type of attribute in each column
+col_type <- sapply(medical_cost, class)
+
+
+###
+type_values <- data.frame(na_values, col_type)
+
+ kable(type_values) %>%
+      kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F) %>%
+      scroll_box(width = "400px", height = "250px")
+```
+
+The imported database contains `r dim(medical_cost)[1]` rows and `r dim(medical_cost)[2]` columns. There are no missing values in our dataset.
+
+```{r echo=FALSE}
+stats <- summary(medical_cost[c('age', 'bmi', 'charges')])
+stats
+```
+
+
+* The mean and the median for "age" and "bmi" columns are almost the same, pointing that the data is not skewed. For these columns the maximun values are not far away from the 75% percentile, what tells us the data may not contain outliers for these two columns.
+
+* In "charges" column the mean is greater than the median, indicanting that the data may be rigth skewed. The maximun value for this column is much greater than the value of the 75% percentile, so we could have outliers.
+
+```{r echo=FALSE}
+## Age distribution
+x <- medical_cost$age
+hist(x, col='lightblue', main='Age Distribution', xlab='Age')
+
+```
+```{r echo=FALSE}
+
+age1 <- filter(medical_cost, age < 39)
+age2 <- filter(medical_cost, age > 39)
+
+par(mfrow=c(1,2))
+hist(age1$charges, col='darkgreen', main='Charges Distribution by Age < 39', xlab='Charges')
+hist(age2$charges, col='deeppink', main='Charges Distribution by Age < 39', xlab='Charges')
+```
+* There's a "peak" in age disribution toward 20. However, the rest of the distribution is uniform.
+* People older than 39 pay a little more than younger people. Both histograms show a multimode behavior.
+
+```{r echo=FALSE}
+# age vs charges vs sex
+
+qplot(x=age, y=charges, data=medical_cost, color=sex, main='Charges by Age and Sex')
+```
+
+According to the plot we could say that there's no difference in medical charges for men and women as the age is increasing. But, let's clear that with a boxplot
+
+```{r echo=FALSE}
+## charges distribution by sex
+boxplot(charges~sex, data=medical_cost, main='Charges Behavior by Sex', horizontal=TRUE, ylab='Sex')
+
+```
+
+* As we stated earlier, charges column contains outliers values.
+* The median charge is the same for both men and women.
+* Men tend to spend more money in medical insurances.
+
+```{r echo=FALSE}
+#bmi distribution
+qplot(medical_cost$bmi, geom='histogram', main='BMI Distribution', xlab='BMI')
+```
+* The BMI data shows a normal distribution with the mean value placed un 30. According to the internet, obesity starts with a BMI of 30.
+* It's interesting to see the charges behavior related to the BMI.
+
+```{r echo=FALSE}
+## bmi distribution
+
+bmi1 <- filter(medical_cost, bmi < 30)
+bmi2 <- filter(medical_cost, bmi > 30)
+
+par(mfrow=c(1,2))
+hist(bmi1$charges, main='Charges Distribution BMI <30', xlab='Charges', col='orange') 
+hist(bmi2$charges, main='Charges Distribution BMI >30', xlab='Charges', col='lightblue')
+
+```
+
+* People with a BMI over 30 spend more money in medical insurances.
+
+```{r echo=FALSE}
+# scatter plot bmi vs charges
+qplot(bmi, charges, data=medical_cost, main='BMI vs Charges', col=smoker)
+```
+
+```{r echo=FALSE}
+#violin plot smoker vs charges
+qplot(smoker, charges, data=medical_cost, main='Smoker Violin Plot', geom='violin', col=smoker, fill=smoker)
+```
+
+* As we can see, smoker pay more for medical insurances.
+* Charges for non-smoker people tend to be low.
+
+```{r echo=FALSE}
+children_count <- aggregate(age ~ children, data=medical_cost, FUN=length)
+
+p <- ggplot(data=children_count, aes(x=children, y=age))+geom_bar(stat='identity')
+p
+```
+
+People with no children prevail in the dataset. Let's see how much money they pay.
+
+```{r echo=FALSE}
+charges_children <- aggregate(charges ~ children, data=medical_cost, FUN=mean)
+
+p <- ggplot(data=charges_children, aes(x=children, y=charges))+geom_bar(stat='identity', fill="#000099")
+p
+```
+
+
+```{r echo=FALSE}
+## blopxplot charges by children number
+
+qplot(as.factor(children), charges, data=medical_cost, geom='boxplot', main='Charges Comparison by Children Number',
+      xlab='Children Number', fill=as.factor(children))
+```
+* People with no children spend less money in medical costs than people with up to four children.
+* People with 5 children spend the least average amount of money.
+* This data is influenced by the outliers. As we see in the boxplot.
+
+Let's see the charges behavior by region.
+
+```{r echo=FALSE}
+par(mfrow=c(2,2))
+hist(medical_cost$charges[medical_cost$region == 'southwest'], main='Southwest Region', xlab='Charges', col='lightgreen')
+hist(medical_cost$charges[medical_cost$region == 'southeast'], main='Southeast Region', xlab='Charges', col='purple')
+hist(medical_cost$charges[medical_cost$region == 'northwest'], main='Northwest Region', xlab='Charges', col='orange')
+hist(medical_cost$charges[medical_cost$region == 'northeast'], main='Northeast Region', xlab='Charges', col='yellow')
+```
+
+According to the plots, there is no difference in charges paid by people into each region.
+
+
+```{r echo=FALSE}
+data_cor <- cor(medical_cost[c('age', 'bmi', 'charges')])
+heatmap(data_cor)
+```
+
+Correlations between continuous variables and the target column are relatively low.
