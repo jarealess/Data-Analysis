@@ -1,6 +1,6 @@
 ---
 title: "Medical Cost Analysis"
-author: "Janick Reales & Luisa Rios"
+author: "Janick Reales"
 date: "11/4/2020"
 output:
   html_document: default
@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = "")
 ```
 # Medical Cost Analysis
  
@@ -24,185 +24,377 @@ The columns within the dataset are the following:
 * region: the beneficiary's residential area in the US, northeast, southeast, southwest, northwest.
 * charges: Individual medical costs billed by health insurance
 
-In this notebook we aim to perform an exploratory analysis in order to describe the main caracteristics of our data and then to train and fit a Linear Regression model to predict medical costs with the highest accuracy as possible.
+In this notebook we aim to perform an exploratory data analysis in order to describe the main characteristics of our data and then to train and fit a Linear Regression model to predict medical costs with the highest accuracy as possible.
 
-Firt, we have to import the libraries needed and the database.
+First, we have to import the libraries needed and the database.
 
 
 ```{r echo=FALSE, include=FALSE}
-library(tidyverse)
-library(shiny)
 library(dplyr)
 library(ggplot2)
 library(plotly)
-library(leaflet)
-library(htmltools)
-library(RColorBrewer)
 library(kableExtra)
 library(gridExtra)
 ```
 
 
 ```{r echo=FALSE}
+## loading data
 medical_cost <- read.csv("insurance.csv", header=TRUE, sep=',', encoding="UTF-8")
-```
+
+## Information
+str(medical_cost)
+```  
+
+As we observe, the dataframe contains 1338 observations and 7 variables. Now, let's see if we have missing variables into our columns.  
+
+```{r}
+## function to count missing values
+Na_Count <- function(feature) {
+  sum(is.na(feature))
+}
+
+## applying to the data
+apply(medical_cost, 2, Na_Count)
+```  
+
+There are no missing values into the data frame. The next step is to convert categorical columns ("sex", "children", "smoker", "region") into factor, so we can used then later for drawing some plots and to train the model.  
+
+```{r}
+## to factor
+medical_cost$sex <- as.factor(medical_cost$sex)
+medical_cost$children <- as.factor(medical_cost$children)
+medical_cost$smoker <- as.factor(medical_cost$smoker)
+medical_cost$region <- as.factor(medical_cost$region)
+
+## 
+head(medical_cost)
+```  
+
+Now, let's get some statistics about the data.  
+
+```{r}
+## summary
+summary(medical_cost)
+```  
+
+* The median and the mean *age* are equal, telling us that the data is not skewed.  
+* The same conclusion for the *bmi* variable.  
+* We have almost the same amount of data for women and man. The opposite for the *smoker* variable, for what the data is unbalanced, having far more non smoker users.  
+* Users with no children prevail in the data set.  
+* We have almost the same amount of users by each region.  
+* For the *charges* variable, the mean is higher than the median. This tells us that the distribution for the charges variable is right skewed. We can also observe that the maximun value is is far from the 3rd quartile, so we may have outliers.  
 
 
-### Data Exploration and Visualization
+### **Exploratory Data Analysis**  
 
-We will perform and exploratory analysis of the dataset in order to get insights from the column though tables and plots.
+First of all, I want to see the correlation between the continuous features (age and bmi), with  the target variable (charges), since it is important to  know this values to figure out how linear is that relationship.  
 
-```{r echo=FALSE}
-dt <- head(medical_cost)
- kable(dt) %>%
-      kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F) %>%
-      scroll_box(width = "500px", height = "250px")
-```
+We have to get the correlation matrix and then melt the data to make possible drawing a heatmap with `ggplot2`.  
 
 
+```{r}
+library(reshape)
+cormat <- cor(medical_cost[c("age","bmi", "charges")])
+
+## melting
+melted_data <- melt(cormat)
+head(melted_data)
+```  
+
+```{r}
+## plot
+g <- ggplot(data = melted_data, aes(x=X1, y=X2, fill=value)) + geom_tile()
+g <- g + labs(x="", y="") + labs(title="Correlation heatmap")
+g <- g + geom_text(aes(X1,X2, label=round(value,2)), color="white", size=4)
+g
+```  
+
+Here we see that the linear correlation between our variables is low, so we can say that the real relationship is not linear. I will explore that later in the notebook.  
+
+For now, let's build a series of plot that allow to understand the behavior of the charges relative to every variable in the dataset.  
 
 
-```{r echo=FALSE}
-## counting the num of NA values in each column
-na_values <- colSums(is.na(medical_cost))
+* ##### **Age vs Charges**  
 
-## checking the type of attribute in each column
-col_type <- sapply(medical_cost, class)
+We already know that the correlation between the variables is not that linear, but it is a good idea to explore the distribution of charges for those ones whose age is above and below the mean value.  
+
+```{r}
+## adding the discretization
+medical_age <- medical_cost
+medical_age$aboveMean<- ifelse(medical_age$age > mean(medical_age$age), "above", "below")
+medical_age$aboveMean <- as.factor(medical_age$aboveMean)
+
+## plot
+ghist <- ggplot(medical_age, aes(x=charges))+geom_histogram(aes(color=aboveMean, fill=aboveMean))
+ghist <- ghist + facet_grid(aboveMean~.) + labs(y="", title="Charges Distribution")
+ghist
+```  
+
+People older than 39 years tend to spend more money in medical insurances. Both histogram show a multimodal behavior. In both cases we observe charges greater than USD 60000.  
+
+Now, lets plot a scatter plot of charges vs age vs sex.  
+
+```{r}
+## scatter
+gscat <- ggplot(medical_cost, aes(age, charges, color=sex)) + geom_point()
+gscat <- gscat + labs(title = "Age vs Charges plot")
+gscat <- gscat + geom_smooth()
+gscat
+```  
+
+In general, charges increase with age. There is no difference between the amount of money paid by men and women.  
+
+```{r}
+## scatter
+gscat <- ggplot(medical_cost, aes(age, charges)) + geom_point()
+gscat <- gscat + labs(title = "Age vs Charges plot")
+gscat <- gscat + geom_smooth() + facet_grid(.~region)
+gscat
+```  
+
+The tendency is the same when we plot the age vs charges by region. The older the person, the more money he/she spends on medical insurances.  
+
+* ##### **BMI vs Charges**  
+
+Again, let's make a plot of *BMI vs Charges*, discretizing by *sex*.  
+
+```{r}
+## scatter
+gscat2 <- ggplot(medical_cost, aes(bmi, charges, color=sex)) + geom_point()
+gscat2 <- gscat2 + labs(x="BMI", y="Charges", title="BMI vs Charges")
+gscat2
+```  
+
+There is no a clear trend between the charges by BMI. BMI seems to be well distributed between both sex. Now, let't compare the amount paid by people with a BMI greater and less than the mean.  
+
+```{r}
+## bmi
+medical_age$bmiAbvMean <- ifelse(medical_age$bmi>mean(medical_age$bmi), "Above", "Below")
+medical_age$bmiAbvMean <- as.factor(medical_age$bmiAbvMean)
+
+## plot
+ghist <- ggplot(medical_age, aes(x=charges)) + geom_histogram(aes(color=bmiAbvMean, fill=bmiAbvMean))
+ghist <- ghist + facet_grid(bmiAbvMean~.) + labs(title="Charges distribution by BMI", y="")
+ghist
+
+```  
+
+The previous plot shows that the amount of money spent by people with a BMI above or below the mean doesn't vary a lot. Now I want to analyze it in terms of the *smoker* variable.  
+
+```{r}
+## smoke
+gscat3 <- ggplot(medical_cost, aes(bmi, charges, color=smoker)) + geom_point()
+gscat3 <- gscat3 + labs(x="BMI", y="Charges", title="BMI vs Charges")
+gscat3
+
+```  
+Smokers spend more money in medical insurances regardless of their *BMI*. Now, let's see the average amount of money people paid according to their number of children.  
+
+```{r}
+## children
+
+gbar <- ggplot(medical_cost, aes(x=children, y=charges)) + stat_summary(fun.y = "mean", geom = "bar", color="lightblue", fill="lightblue")
+gbar <- gbar + labs(title="Average Charges by # of Children")
+gbar
+```  
+Having more children doesn't mean people will spend more money in medical insurances. In fact, people with 5 children pay less money than the others.  
+
+```{r}
+gbox <- ggplot(medical_cost, aes(x=children, y=charges)) + geom_boxplot(aes(fill=children))
+gbox <- gbox + labs(title="Charges by # of children")
+gbox
+```  
+
+* As we see, in every case there are outliers in the money people with a certain amount of children paid.  
+* The median charges (the line inside the box) is almost doesn't vary a lot in a scale of thousands.  
+* The range of charges is wider in families with 2 and 3 children, which where found to spend more money in average (see previous plot).  
+
+* **Charges by Sex**  
+
+In this part, I want to observe the charges distribution by sex by drawing a *violin plot*.  
+
+```{r}
+#charges by sex
+gvio <- ggplot(medical_cost, aes(x=charges, y=sex)) + geom_violin(aes(fill=sex))
+gvio
+```  
+
+As we said earlier, there is not much difference between the average amount of money paid by each gender as is shown in the violin plot. 
 
 
-###
-type_values <- data.frame(na_values, col_type)
+### **Linear Model**  
 
- kable(type_values) %>%
-      kable_styling(bootstrap_options = c("hover", "condensed"), full_width = F) %>%
-      scroll_box(width = "400px", height = "250px")
-```
+From the previous plot, we saw a weak linear correlation between the continuous features and the target variable. Having that into account, I want to fit a Linear model with the `lm()` function to see the performance of this model. With those results, I want to see whether it is necessary to transform the variables in order to get a better performance.  
 
-The imported database contains `r dim(medical_cost)[1]` rows and `r dim(medical_cost)[2]` columns. There are no missing values in our dataset.
-
-```{r echo=FALSE}
-stats <- summary(medical_cost[c('age', 'bmi', 'charges')])
-stats
-```
+Now I'm going to train the linear model with all of the features.  
 
 
-* The mean and the median for "age" and "bmi" columns are almost the same, pointing that the data is not skewed. For these columns the maximun values are not far away from the 75% percentile, what tells us the data may not contain outliers for these two columns.
+```{r}
+## linear model
+model_1 <- lm(charges~., data=medical_cost)
+summary(model_1)
+```  
+From the obtained p-values, we can see that, in general, the region variable is not significant to the model.  
+This model also shows a R2 equals to 74.97%, which is low in terms of the performance of the model when predicting. I will train a model without the intercept to figure out if the model improves.  
 
-* In "charges" column the mean is greater than the median, indicanting that the data may be rigth skewed. The maximun value for this column is much greater than the value of the 75% percentile, so we could have outliers.
+```{r}
+## linear model 2
+model_2 <- lm(charges~.-1, data=medical_cost)
+summary(model_2)
+```  
+By removing the intercept we can observe that the model improves, since our R2 now is 88.62%. We can use this model to make predictions using the testing later in this notebook.  
 
-```{r echo=FALSE}
-## Age distribution
-x <- medical_cost$age
-hist(x, col='lightblue', main='Age Distribution', xlab='Age')
+For now, let's get some of the plots R allows us to draw in order to understand better our linear model.  
 
-```
-```{r echo=FALSE}
-
-age1 <- filter(medical_cost, age < 39)
-age2 <- filter(medical_cost, age > 39)
-
+```{r}
+## plots
 par(mfrow=c(1,2))
-hist(age1$charges, col='darkgreen', main='Charges Distribution by Age < 39', xlab='Charges')
-hist(age2$charges, col='deeppink', main='Charges Distribution by Age < 39', xlab='Charges')
-```
-* There's a "peak" in age disribution toward 20. However, the rest of the distribution is uniform.
-* People older than 39 pay a little more than younger people. Both histograms show a multimode behavior.
 
-```{r echo=FALSE}
-# age vs charges vs sex
+plot(model_2,1)
+plot(model_2,2)
+```  
 
-qplot(x=age, y=charges, data=medical_cost, color=sex, main='Charges by Age and Sex')
-```
+In the Residuals vs Fitted plot, we can observe that the point are not randomly distributed (the ideal behavior). In statistics this behavior is attributed to the fact that the variance of the error terms is not constant.  
 
-According to the plot we could say that there's no difference in medical charges for men and women as the age is increasing. But, let's clear that with a boxplot
-
-```{r echo=FALSE}
-## charges distribution by sex
-boxplot(charges~sex, data=medical_cost, main='Charges Behavior by Sex', horizontal=TRUE, ylab='Sex')
-
-```
-
-* As we stated earlier, charges column contains outliers values.
-* The median charge is the same for both men and women.
-* Men tend to spend more money in medical insurances.
-
-```{r echo=FALSE}
-#bmi distribution
-qplot(medical_cost$bmi, geom='histogram', main='BMI Distribution', xlab='BMI')
-```
-* The BMI data shows a normal distribution with the mean value placed un 30. According to the internet, obesity starts with a BMI of 30.
-* It's interesting to see the charges behavior related to the BMI.
-
-```{r echo=FALSE}
-## bmi distribution
-
-bmi1 <- filter(medical_cost, bmi < 30)
-bmi2 <- filter(medical_cost, bmi > 30)
-
+```{r}
+## plots
 par(mfrow=c(1,2))
-hist(bmi1$charges, main='Charges Distribution BMI <30', xlab='Charges', col='orange') 
-hist(bmi2$charges, main='Charges Distribution BMI >30', xlab='Charges', col='lightblue')
 
-```
+plot(model_2,3)
+plot(model_2,4)
+```  
 
-* People with a BMI over 30 spend more money in medical insurances.
+The cook distance is a way to estimate the influence of a data point when performing a least-squared linear regression analysis like the one I'm trying to perform. This Cook's distance measures the effect of deleting a given point on the regression and in a deeper study it is good to examine those point with a high Cook's distance.   
 
-```{r echo=FALSE}
-# scatter plot bmi vs charges
-qplot(bmi, charges, data=medical_cost, main='BMI vs Charges', col=smoker)
-```
-
-```{r echo=FALSE}
-#violin plot smoker vs charges
-qplot(smoker, charges, data=medical_cost, main='Smoker Violin Plot', geom='violin', col=smoker, fill=smoker)
-```
-
-* As we can see, smoker pay more for medical insurances.
-* Charges for non-smoker people tend to be low.
-
-```{r echo=FALSE}
-children_count <- aggregate(age ~ children, data=medical_cost, FUN=length)
-
-p <- ggplot(data=children_count, aes(x=children, y=age))+geom_bar(stat='identity')
-p
-```
-
-People with no children prevail in the dataset. Let's see how much money they pay.
-
-```{r echo=FALSE}
-charges_children <- aggregate(charges ~ children, data=medical_cost, FUN=mean)
-
-p <- ggplot(data=charges_children, aes(x=children, y=charges))+geom_bar(stat='identity', fill="#000099")
-p
-```
+Any point with a Cook's distance higher than 0.5 is consider to have a high influence on the model, so we don't have such a problem.  
 
 
-```{r echo=FALSE}
-## blopxplot charges by children number
+```{r}
+## plots
+par(mfrow=c(1,2))
 
-qplot(as.factor(children), charges, data=medical_cost, geom='boxplot', main='Charges Comparison by Children Number',
-      xlab='Children Number', fill=as.factor(children))
-```
-* People with no children spend less money in medical costs than people with up to four children.
-* People with 5 children spend the least average amount of money.
-* This data is influenced by the outliers. As we see in the boxplot.
+plot(model_2,5)
+plot(model_2,6)
+```  
 
-Let's see the charges behavior by region.
+The residuals vs leverage plot shows the Standarized Residuals. Here, any point above 2 and below -2 is suspicious to be an outlier. Our model also take 13 predictor (taking into account the codification it takes for the categorical ones), so any point with a leverage higher than ($2*13/1338 = 0.019$) is consider to have a high leverage.  
 
-```{r echo=FALSE}
-par(mfrow=c(2,2))
-hist(medical_cost$charges[medical_cost$region == 'southwest'], main='Southwest Region', xlab='Charges', col='lightgreen')
-hist(medical_cost$charges[medical_cost$region == 'southeast'], main='Southeast Region', xlab='Charges', col='purple')
-hist(medical_cost$charges[medical_cost$region == 'northwest'], main='Northwest Region', xlab='Charges', col='orange')
-hist(medical_cost$charges[medical_cost$region == 'northeast'], main='Northeast Region', xlab='Charges', col='yellow')
-```
+From the linear model, we can get the leverage, standarized residuals and Cook's distance by using some functions. I'm gonna do that and add each of these calculations to the dataset.  
 
-According to the plots, there is no difference in charges paid by people into each region.
+```{r}
+## new variables
+medical_cost$Leverage <- hatvalues(model_2)
+medical_cost$Stand.resid <- rstandard(model_2)
+medical_cost$Cooks.dist <- cooks.distance(model_2)
+
+head(medical_cost)
+```  
+
+We can identify the influential point by filtering the data set using the `which()` function.  
+
+* **High residual point**  
+
+```{r}
+high_resid <- medical_cost[which(abs(medical_cost$Stand.resid)>2),]
+head(high_resid)
+```  
+
+* **High leverage point**  
+
+```{r}
+num_coef = length(model_2$coefficients)
+num_row = length(model_2$residuals)
+
+high_leverage <- medical_cost[which(medical_cost$Leverage>(2*num_coef/num_row)), ]
+head(high_leverage)
+```  
+
+* **High Cook's Distance Points**  
+
+```{r}
+medical_cost[which(medical_cost$Cooks.dist>0.5),]
+```  
+
+As we saw earlier, there are no points with a high Cook's distance.  
+
+We can organize the influential points, having high leverage and high residual, in order to study them closely. To do this I'll use the `union()` function.  
+
+```{r}
+influentials <- union(which(medical_cost$Leverage>(2*num_coef/num_row)), which(abs(medical_cost$Stand.resid)>2))
+
+influentials <- sort(influentials)
+
+## dataset
+influential_points <- medical_cost[influentials, ]
+head(influential_points)
+```  
+
+With this data and more information about the source of the data one could perform a deeper analysis. That work is out of the scope of this analysis.  
+
+From the previous analysis, we can say that the linear model may not be the adequate for predicting the Medical Insurances Cost. It could be a good idea to try fitting another model, but that's not the idea here; I just wanted to discover and understand some of the features related to performing an analysis using the *Linear Model*.  
 
 
-```{r echo=FALSE}
-data_cor <- cor(medical_cost[c('age', 'bmi', 'charges')])
-heatmap(data_cor)
-```
 
-Correlations between continuous variables and the target column are relatively low.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
